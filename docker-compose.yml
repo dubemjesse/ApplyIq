@@ -1,0 +1,99 @@
+# Host ports are shifted from the usual 5432/6379/5000 defaults because this
+# machine already runs unrelated services on those ports. Container-to-
+# container traffic (server -> postgres/redis) is unaffected, since Docker's
+# internal network still uses the default ports.
+services:
+  postgres:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-applyiq}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-applyiq}
+      POSTGRES_DB: ${POSTGRES_DB:-applyiq}
+    ports:
+      - "5433:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-applyiq}"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  redis:
+    image: redis:7-alpine
+    restart: unless-stopped
+    ports:
+      - "6380:6379"
+    volumes:
+      - redis_data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  server:
+    build:
+      context: ./server
+    restart: unless-stopped
+    ports:
+      - "5001:5000"
+    env_file:
+      - ./server/.env
+    environment:
+      # PORT is force-overridden here (not left to .env) because .env's PORT
+      # is tuned for local non-Docker dev (avoiding a host port conflict) —
+      # inside the container there's no such conflict, and this must match
+      # the Dockerfile's EXPOSE and the port mapping on the left below.
+      PORT: "5000"
+      DATABASE_URL: postgresql://${POSTGRES_USER:-applyiq}:${POSTGRES_PASSWORD:-applyiq}@postgres:5432/${POSTGRES_DB:-applyiq}
+      REDIS_URL: redis://redis:6379
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    volumes:
+      - ./server:/app
+      - /app/node_modules
+
+  # Processes the Bull queue (follow-up emails) — see server/queues/jobQueue.js.
+  # Runs the same image as `server` but with a different command, so a slow
+  # or failing SMTP send never blocks the API or the cron tick.
+  worker:
+    build:
+      context: ./server
+    restart: unless-stopped
+    command: npm run worker
+    env_file:
+      - ./server/.env
+    environment:
+      DATABASE_URL: postgresql://${POSTGRES_USER:-applyiq}:${POSTGRES_PASSWORD:-applyiq}@postgres:5432/${POSTGRES_DB:-applyiq}
+      REDIS_URL: redis://redis:6379
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    volumes:
+      - ./server:/app
+      - /app/node_modules
+
+  client:
+    build:
+      context: ./client
+    restart: unless-stopped
+    ports:
+      - "5173:5173"
+    environment:
+      VITE_API_URL: http://localhost:5001
+    depends_on:
+      - server
+    volumes:
+      - ./client:/app
+      - /app/node_modules
+
+volumes:
+  postgres_data:
+  redis_data:

@@ -1,0 +1,171 @@
+// ApplyIQ database schema
+// Run `npm run prisma:migrate` inside /server after editing this file.
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+enum Role {
+  JOBSEEKER
+  ADMIN
+}
+
+enum ApplicationStatus {
+  SAVED
+  APPLIED
+  INTERVIEW
+  OFFER
+  REJECTED
+}
+
+enum DocumentType {
+  CV
+  COVER_LETTER
+}
+
+enum AgentRunStatus {
+  RUNNING
+  SUCCESS
+  FAILED
+}
+
+enum JobSource {
+  LINKEDIN
+  INDEED
+  GLASSDOOR
+  GREENHOUSE
+  LEVER
+  OTHER
+}
+
+model User {
+  id          String   @id @default(uuid())
+  name        String
+  email       String   @unique
+  password    String
+  role        Role     @default(JOBSEEKER)
+
+  // Profile
+  skills          String[] @default([])
+  experience      Json?    // structured work history parsed from CV or entered manually
+  preferences     Json?    // { targetRoles, locations, remote, salaryMin, salaryMax, experienceLevel }
+  resumeRaw       String?  // original parsed CV text
+  resumeStructured Json?   // structured CV data (skills, roles, education, etc.)
+
+  applications      Application[]
+  generatedDocuments GeneratedDocument[]
+  agentRuns         AgentRun[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@map("users")
+}
+
+model JobListing {
+  id          String    @id @default(uuid())
+  title       String
+  company     String
+  description String    @db.Text
+  url         String    @unique
+  location    String?
+  remote      Boolean   @default(false)
+  salaryMin   Int?
+  salaryMax   Int?
+  experienceLevel String?
+  source      JobSource
+  externalId  String?   // id/slug from source platform, used for de-duplication
+  scrapedAt   DateTime  @default(now())
+
+  applications        Application[]
+  generatedDocuments  GeneratedDocument[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([company])
+  @@index([source])
+  @@map("job_listings")
+}
+
+model Application {
+  id        String            @id @default(uuid())
+  userId    String
+  jobId     String
+  status    ApplicationStatus @default(SAVED)
+  matchScore Int?
+  matchReasoning String?      @db.Text
+  skillGaps String[]         @default([])
+  contactName  String?
+  contactEmail String?
+  notes     String?           @db.Text
+  appliedAt DateTime?
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+  job  JobListing @relation(fields: [jobId], references: [id], onDelete: Cascade)
+
+  followUps FollowUp[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@unique([userId, jobId])
+  @@index([userId, status])
+  @@map("applications")
+}
+
+model GeneratedDocument {
+  id        String       @id @default(uuid())
+  userId    String
+  jobId     String
+  type      DocumentType
+  content   String       @db.Text
+  fileUrl   String?
+
+  user User       @relation(fields: [userId], references: [id], onDelete: Cascade)
+  job  JobListing @relation(fields: [jobId], references: [id], onDelete: Cascade)
+
+  createdAt DateTime @default(now())
+
+  @@index([userId, jobId])
+  @@map("generated_documents")
+}
+
+model AgentRun {
+  id        String         @id @default(uuid())
+  userId    String
+  status    AgentRunStatus @default(RUNNING)
+  jobsFound Int            @default(0)
+  jobsMatched Int          @default(0)
+  documentsGenerated Int   @default(0)
+  log       Json?          // step-by-step log entries
+  error     String?        @db.Text
+  startedAt DateTime       @default(now())
+  endedAt   DateTime?
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@map("agent_runs")
+}
+
+model FollowUp {
+  id            String   @id @default(uuid())
+  applicationId String
+  scheduledAt   DateTime
+  sent          Boolean  @default(false)
+  sentAt        DateTime?
+  emailSubject  String?
+  emailBody     String?  @db.Text
+
+  application Application @relation(fields: [applicationId], references: [id], onDelete: Cascade)
+
+  createdAt DateTime @default(now())
+
+  @@index([applicationId])
+  @@map("follow_ups")
+}
