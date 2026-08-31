@@ -2,6 +2,8 @@
 
 @theme {
   --font-sans: "Inter", ui-sans-serif, system-ui, sans-serif;
+  --font-display: "Sora", "Inter", ui-sans-serif, system-ui, sans-serif;
+  --font-mono: "IBM Plex Mono", ui-monospace, "SF Mono", Menlo, monospace;
 
   /* ApplyIQ brand palette */
   --color-navy: #020b18;
@@ -11,6 +13,16 @@
   --color-electric-light: #5fa5eb;
   --color-lime: #97c459;
   --color-lime-light: #aed877;
+
+  /* Raised card surfaces — crisper than navy-light/40 for the dashboard */
+  --color-surface: #081a30;
+  --color-surface-2: #0c2138;
+  --color-surface-3: #112a45;
+
+  /* Semantic status hues (aligned with utils/chartColors.js) */
+  --color-interview: #23a97b;
+  --color-warn: #e0a93b;
+  --color-danger: #db6089;
 }
 
 @layer base {
